@@ -3,4 +3,7 @@ name = "pythonproject"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.124.2",
+    "nicegui>=3.4.0",
+]

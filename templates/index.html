@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chat Summary</title>
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: #222;
+        background: #f5f5f5;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 960px;
+        padding: 2rem 1.5rem 4rem;
+      }
+      h1,
+      h2,
+      h3 {
+        margin-top: 2rem;
+      }
+      form {
+        margin-bottom: 2rem;
+        padding: 1.5rem;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+      }
+      .field {
+        margin-bottom: 1rem;
+      }
+      input[type="file"] {
+        display: block;
+        padding: 0.25rem 0;
+      }
+      button {
+        background: #0066cc;
+        color: #fff;
+        border: none;
+        padding: 0.6rem 1.2rem;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0053a1;
+      }
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+        margin-bottom: 1.5rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.5rem;
+      }
+      th,
+      td {
+        padding: 0.45rem 0.5rem;
+        border: 1px solid #e0e0e0;
+        text-align: left;
+        font-size: 0.95rem;
+      }
+      th {
+        background: #f0f2f5;
+      }
+      .alert {
+        background: #ffecec;
+        color: #b30000;
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+      }
+      ul.totals {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+      }
+      ul.totals li {
+        background: #f0f4ff;
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+      }
+      .muted {
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WhatsApp Chat Summary</h1>
+    <p class="muted">
+      Upload an exported <code>_chat.txt</code> file (Android or iOS) to view
+      message counts, media usage, and per-person statistics.
+    </p>
+
+    {% if error %}
+    <div class="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+      <div class="field">
+        <label for="chat_file"><strong>Chat export (.txt)</strong></label>
+        <input
+          id="chat_file"
+          name="chat_file"
+          type="file"
+          accept=".txt"
+          required
+        />
+      </div>
+      <button type="submit">Create summary</button>
+    </form>
+
+    {% if summary %}
+    <section class="card">
+      <h2>Totals · {{ summary.filename }}</h2>
+      <ul class="totals">
+        {% for label, value in summary.totals %}
+        <li><strong>{{ label }}:</strong> {{ value }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Messages by Year</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Year</th>
+            <th>Messages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for year, count in summary.year_rows %}
+          <tr>
+            <td>{{ year }}</td>
+            <td>{{ count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Messages by Person</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Person</th>
+            <th>Messages</th>
+            <th>Characters</th>
+            <th>Voice</th>
+            <th>Videos</th>
+            {% if summary.show_video_notes %}
+            <th>Video notes</th>
+            {% endif %}
+            <th>Photos</th>
+            <th>Stickers</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in summary.people_rows %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td>{{ row.messages }}</td>
+            <td>{{ row.characters }}</td>
+            <td>{{ row.voice }}</td>
+            <td>{{ row.videos }}</td>
+            {% if summary.show_video_notes %}
+            <td>{{ row.video_notes }}</td>
+            {% endif %}
+            <td>{{ row.photos }}</td>
+            <td>{{ row.stickers }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>Most Common Words</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Word</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for word, count in summary.top_words %}
+          <tr>
+            <td>{{ word }}</td>
+            <td>{{ count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+  </body>
+</html>

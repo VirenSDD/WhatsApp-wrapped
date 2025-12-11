@@ -21,6 +21,18 @@ MEDIA_PLACEHOLDER = "<media omitted>"
 VIDEO_NOTE_PLACEHOLDER = "<video note omitted>"
 VOICE_ONCE_PLACEHOLDER = "<view once voice message omitted>"
 FILE_ATTACHMENT_RE = re.compile(r"([A-Za-z0-9_-]+)\.([A-Za-z0-9]+)\s+\(file attached\)", re.I)
+ATTACHED_TAG_RE = re.compile(r"<attached:\s*[^>]+\.(\w+)>", re.I)
+SYSTEM_TEXT_MARKERS = (
+    "messages and calls are end-to-end encrypted",
+    "created this group",
+    "added you",
+    "changed this group's icon",
+    "changed this group's description",
+    "changed the subject",
+    "changed this group's subject",
+    "joined using this group's invite link",
+    "pinned a message",
+)
 
 STOPWORDS = {
     # Spanish
@@ -244,18 +256,30 @@ def parse_timestamp(date_str: str, time_str: str) -> datetime:
     raise ValueError(f"Unrecognized date format: {joined}")
 
 
-def read_messages(path: Path) -> List[Dict[str, object]]:
+def read_messages(path: Path) -> tuple[List[Dict[str, object]], str]:
     messages: List[Dict[str, object]] = []
     current = None
     last_timestamp: datetime | None = None
+    export_format: str | None = None
 
     with path.open("r", encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.rstrip("\n")
             normalized = line.lstrip("\ufeff\u200e").strip("\ufeff")
-            match = IOS_TIMESTAMP_RE.match(normalized)
-            if not match:
+            match = None
+            matched_format: str | None = None
+
+            if export_format in (None, "ios"):
+                match = IOS_TIMESTAMP_RE.match(normalized)
+                if match:
+                    matched_format = "ios"
+            if match is None and export_format in (None, "android"):
                 match = ANDROID_TIMESTAMP_RE.match(normalized)
+                if match:
+                    matched_format = "android"
+
+            if export_format is None and matched_format:
+                export_format = matched_format
             start_new_message = False
             timestamp: datetime | None = None
             rest: str | None = None
@@ -272,14 +296,27 @@ def read_messages(path: Path) -> List[Dict[str, object]]:
             if start_new_message:
                 if current:
                     messages.append(current)
-                if ":" in rest:
-                    sender_part, message_part = rest.split(":", 1)
-                    sender = sender_part.strip()
-                    text = message_part.strip()
-                else:
-                    sender = "System"
-                    text = rest.strip()
-                current = {"datetime": timestamp, "sender": sender, "text": text}
+                if ":" not in rest:
+                    # System events (creation, icon changes, etc.) do not have a sender; skip them.
+                    current = None
+                    last_timestamp = timestamp
+                    continue
+                sender_part, message_part = rest.split(":", 1)
+                sender = sender_part.strip()
+                text = message_part.strip()
+                normalized_text = text.strip("\u200e\u200f ").lower()
+                if any(marker in normalized_text for marker in SYSTEM_TEXT_MARKERS):
+                    # Skip iOS style system events that still include a colon (e.g., "You pinned a message").
+                    current = None
+                    last_timestamp = timestamp
+                    continue
+                message_format = matched_format or export_format
+                current = {
+                    "datetime": timestamp,
+                    "sender": sender,
+                    "text": text,
+                    "format": message_format,
+                }
                 last_timestamp = timestamp
             else:
                 if current is None:
@@ -295,7 +332,7 @@ def read_messages(path: Path) -> List[Dict[str, object]]:
     if current:
         messages.append(current)
 
-    return messages
+    return messages, export_format or "android"
 
 
 def _contains_attachment_keyword(text: str, keyword: str) -> bool:
@@ -303,14 +340,27 @@ def _contains_attachment_keyword(text: str, keyword: str) -> bool:
     return "<ATTACHED" in upper and keyword in upper
 
 
-def detect_attachment_type(text: str) -> str | None:
+def detect_attachment_type(text: str, export_format: str | None = None) -> str | None:
     lowered = text.lower()
     if VOICE_ONCE_PLACEHOLDER in lowered:
         return "voice"
     if VIDEO_NOTE_PLACEHOLDER in lowered:
-        return "video_note"
+        return "video_note" if export_format != "ios" else "video"
     if MEDIA_PLACEHOLDER in lowered:
         return "photo"
+    attached_match = ATTACHED_TAG_RE.search(text)
+    if attached_match:
+        extension = attached_match.group(1).lower()
+        if extension == "opus":
+            return "voice"
+        if extension in {"webp", "sticker"}:
+            return "sticker"
+        if extension in {"jpg", "jpeg", "png"}:
+            return "photo"
+        if extension in {"gif"}:
+            return "video"
+        if extension in {"mp4", "mov", "m4v"}:
+            return "video"
     match = FILE_ATTACHMENT_RE.search(text)
     if match:
         extension = match.group(2).lower()
@@ -318,33 +368,35 @@ def detect_attachment_type(text: str) -> str | None:
             return "voice"
         if extension == "webp":
             return "sticker"
-        if extension in {"jpg", "jpeg", "png", "gif"}:
+        if extension in {"jpg", "jpeg", "png"}:
             return "photo"
+        if extension in {"gif", "mp4", "mov", "m4v"}:
+            return "video"
     return None
 
 
-def is_voice_message(text: str) -> bool:
+def is_voice_message(text: str, export_format: str | None = None) -> bool:
     lowered = text.lower()
     if "audio omit" in lowered or "nota de voz omit" in lowered:
         return True
-    return detect_attachment_type(text) == "voice"
+    return detect_attachment_type(text, export_format) == "voice"
 
 
-def is_photo(text: str) -> bool:
+def is_photo(text: str, export_format: str | None = None) -> bool:
     lowered = text.lower()
     if "image omit" in lowered or "imagen omit" in lowered or "foto omit" in lowered:
         return True
-    attachment = detect_attachment_type(text)
+    attachment = detect_attachment_type(text, export_format)
     if attachment == "photo":
         return True
     return _contains_attachment_keyword(text, "PHOTO")
 
 
-def is_sticker(text: str) -> bool:
+def is_sticker(text: str, export_format: str | None = None) -> bool:
     lowered = text.lower()
     if "sticker omit" in lowered:
         return True
-    if detect_attachment_type(text) == "sticker":
+    if detect_attachment_type(text, export_format) == "sticker":
         return True
     return _contains_attachment_keyword(text, "STICKER")
 
@@ -363,39 +415,60 @@ def summarize(messages: List[Dict[str, object]], top_n: int) -> Dict[str, object
     totals_by_year = Counter()
     totals_by_person = Counter()
     voice_by_person = Counter()
+    video_by_person = Counter()
     video_note_by_person = Counter()
     photos_by_person = Counter()
     stickers_by_person = Counter()
     word_counter = Counter()
+    char_by_person = Counter()
+    total_characters = 0
 
     total_voice = 0
+    total_videos = 0
     total_video_notes = 0
     total_photos = 0
     total_stickers = 0
+
+    export_format = None
 
     for msg in messages:
         sender = str(msg["sender"])
         text = str(msg["text"])
         timestamp: datetime = msg["datetime"]  # type: ignore[assignment]
+        msg_format = str(msg.get("format") or "")
+        if not export_format and msg_format:
+            export_format = msg_format
+
+        message_chars = len(text)
+        char_by_person[sender] += message_chars
+        total_characters += message_chars
 
         totals_by_person[sender] += 1
         totals_by_year[timestamp.year] += 1
 
-        attachment_type = detect_attachment_type(text)
+        attachment_type = detect_attachment_type(text, msg_format or None)
 
-        if is_voice_message(text):
+        if is_voice_message(text, msg_format or None):
             total_voice += 1
             voice_by_person[sender] += 1
             continue
+        if attachment_type == "video":
+            total_videos += 1
+            video_by_person[sender] += 1
+            continue
         if attachment_type == "video_note":
+            if msg_format == "ios":
+                total_videos += 1
+                video_by_person[sender] += 1
+                continue
             total_video_notes += 1
             video_note_by_person[sender] += 1
             continue
-        if is_photo(text):
+        if is_photo(text, msg_format or None):
             total_photos += 1
             photos_by_person[sender] += 1
             continue
-        if is_sticker(text):
+        if is_sticker(text, msg_format or None):
             total_stickers += 1
             stickers_by_person[sender] += 1
             continue
@@ -408,13 +481,18 @@ def summarize(messages: List[Dict[str, object]], top_n: int) -> Dict[str, object
         "messages_by_person": totals_by_person,
         "voice_total": total_voice,
         "voice_by_person": voice_by_person,
+        "video_total": total_videos,
+        "video_by_person": video_by_person,
         "video_note_total": total_video_notes,
         "video_note_by_person": video_note_by_person,
         "photo_total": total_photos,
         "photo_by_person": photos_by_person,
         "sticker_total": total_stickers,
         "sticker_by_person": stickers_by_person,
+        "char_by_person": char_by_person,
+        "total_characters": total_characters,
         "top_words": word_counter.most_common(top_n),
+        "export_format": export_format or "",
     }
 
 
@@ -448,7 +526,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    messages = read_messages(args.file)
+    messages, _ = read_messages(args.file)
     if not messages:
         raise SystemExit(f"No messages found in {args.file}")
 
@@ -461,14 +539,21 @@ def main() -> None:
     print(f"\nVoice notes: {stats['voice_total']}")
     print_counter("Voice notes by person:", stats["voice_by_person"])
 
-    print(f"\nVideo notes: {stats['video_note_total']}")
-    print_counter("Video notes by person:", stats["video_note_by_person"])
+    print(f"\nVideos: {stats['video_total']}")
+    print_counter("Videos by person:", stats["video_by_person"])
+
+    if stats.get("export_format") != "ios":
+        print(f"\nVideo notes: {stats['video_note_total']}")
+        print_counter("Video notes by person:", stats["video_note_by_person"])
 
     print(f"\nPhotos: {stats['photo_total']}")
     print_counter("Photos by person:", stats["photo_by_person"])
 
     print(f"\nStickers: {stats['sticker_total']}")
     print_counter("Stickers by person:", stats["sticker_by_person"])
+
+    print(f"\nCharacters sent: {stats['total_characters']}")
+    print_counter("Characters by person:", stats["char_by_person"])
 
     print("\nMost frequent words:")
     for word, count in stats["top_words"]:
