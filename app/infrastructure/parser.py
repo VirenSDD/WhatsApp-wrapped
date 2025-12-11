@@ -7,7 +7,8 @@ from typing import Optional, Tuple
 
 from re import Match
 
-from app.domain.models import Conversation, MessageKind
+from app.domain.conversation import Conversation
+from app.domain.participant import MessageKind
 
 IOS_TIMESTAMP_RE = re.compile(
     r"^\s*\[(\d{1,2}/\d{1,2}/\d{2,4}),\s+(\d{1,2}:\d{2}(?::\d{2})?)\]\s+(.*)"

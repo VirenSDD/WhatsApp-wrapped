@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from typing import Dict, List, TypedDict
 
-from app.domain.models import Conversation
+from app.domain.conversation import Conversation
 
 STOPWORDS = {
     "de",
@@ -247,7 +247,9 @@ class ConversationSummarizer:
 
         messages_by_person = {name: stats.message_count for name, stats in participants.items()}
         char_by_person = collect("characters")
-        longest_text_by_person = collect("longest_text_length")
+        longest_text_by_person = {
+            name: len(stats.longest_text) for name, stats in participants.items()
+        }
         longest_text_content = {name: stats.longest_text for name, stats in participants.items()}
         voice_by_person = collect("voice_notes")
         video_by_person = collect("videos")
