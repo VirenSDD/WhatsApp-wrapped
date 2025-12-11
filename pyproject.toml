@@ -4,7 +4,45 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.124.2",
-    "nicegui>=3.4.0",
-    "pillow>=12.0.0",
+    "fastapi==0.124.2",
+    "nicegui==3.4.0",
+    "pillow==12.0.0",
+    "pydantic==2.12.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.5.4",
+    "mypy==1.10.0",
+    "deptry==0.12.0",
+    "poethepoet==0.24.4",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.13"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unreachable = true
+disallow_untyped_defs = true
+strict_optional = true
+
+[tool.deptry]
+ignore = []
+per_rule_ignores = { DEP002 = ["ruff", "mypy", "deptry", "poethepoet"] }
+
+[tool.poe.tasks]
+"deps:check" = "uv run deptry ."
+"format:check" = "uv run ruff format --check ."
+"lint:fix" = "uv run ruff check --fix ."
+
+[tool.poe.tasks."run:checks"]
+sequence = [
+    "format:check",
+    { cmd = "uv run mypy ." },
+    "deps:check",
+    "lint:fix",
 ]
