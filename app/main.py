@@ -10,9 +10,9 @@ from typing import Dict, List, Optional, Sequence, Tuple, TypedDict
 from fastapi import FastAPI
 from nicegui import events, ui
 
-from application.services import ConversationSummarizer, SummaryStats
-from infrastructure.parser import ChatParser
-from wrapped_image import WrappedPayload, generate_wrapped_image
+from app.application.services import ConversationSummarizer, SummaryStats
+from app.infrastructure.parser import ChatParser
+from app.wrapped_image import WrappedPayload, generate_wrapped_image
 
 fastapi_app = FastAPI()
 app = fastapi_app

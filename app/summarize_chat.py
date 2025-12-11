@@ -7,8 +7,8 @@ import argparse
 from pathlib import Path
 from typing import Hashable, Mapping, TypeVar
 
-from application.services import ConversationSummarizer, SummaryStats
-from infrastructure.parser import ChatParser
+from app.application.services import ConversationSummarizer, SummaryStats
+from app.infrastructure.parser import ChatParser
 
 
 K = TypeVar("K", bound=Hashable)

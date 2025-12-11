@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from typing import Dict, List, TypedDict
 
-from domain.models import Conversation
+from app.domain.models import Conversation
 
 STOPWORDS = {
     "de",
