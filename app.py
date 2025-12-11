@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from fastapi import FastAPI
 from nicegui import events, ui
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:  # pragma: no cover - pillow optional until user installs
+    Image = ImageDraw = ImageFont = None  # type: ignore[assignment]
 
 from summarize_chat import read_messages, summarize
 
 fastapi_app = FastAPI()
 app = fastapi_app
+
+
+def _top_person(counter: Dict[str, int]) -> Tuple[str, int]:
+    if not counter:
+        return ("N/A", 0)
+    return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[0]
 
 
 def build_summary_context(stats: Dict[str, object], filename: str) -> Dict[str, object]:
@@ -41,6 +52,7 @@ def build_summary_context(stats: Dict[str, object], filename: str) -> Dict[str, 
                 "name": person,
                 "messages": message_count,
                 "characters": stats["char_by_person"].get(person, 0),
+                "longest": stats["longest_text_by_person"].get(person, 0),
                 "voice": stats["voice_by_person"].get(person, 0),
                 "videos": stats["video_by_person"].get(person, 0),
                 "video_notes": stats["video_note_by_person"].get(person, 0),
@@ -52,6 +64,14 @@ def build_summary_context(stats: Dict[str, object], filename: str) -> Dict[str, 
 
     top_words = [{"word": word, "count": count} for word, count in stats["top_words"]]
 
+    categories = [
+        ("Most Yapper", _top_person(stats["voice_by_person"])),
+        ("Writer", _top_person(stats["longest_text_by_person"])),
+        ("Most Sticky", _top_person(stats["sticker_by_person"])),
+        ("Photographer", _top_person(stats["photo_by_person"])),
+        ("Texter", _top_person(stats["char_by_person"])),
+    ]
+
     return {
         "filename": filename,
         "totals": totals,
@@ -59,11 +79,51 @@ def build_summary_context(stats: Dict[str, object], filename: str) -> Dict[str, 
         "people_rows": people_rows,
         "show_video_notes": show_video_notes,
         "top_words": top_words,
+        "categories": categories,
     }
 
 
-def render_summary(container: ui.column, summary: Dict[str, object]) -> None:
+def generate_shareable_card(summary: Dict[str, object]) -> bytes:
+    if Image is None or ImageDraw is None or ImageFont is None:
+        raise RuntimeError("Pillow is required for generating shareable cards. Install it with `uv add pillow`.")
+    width, height = 1000, 600
+    background = (244, 247, 255)
+    img = Image.new("RGB", (width, height), background)
+    draw = ImageDraw.Draw(img)
+    title_font = ImageFont.load_default()
+    subtitle_font = ImageFont.load_default()
+
+    draw.text((40, 30), "WhatsApp Chat Summary", fill=(20, 40, 80), font=title_font)
+    draw.text((40, 60), summary["filename"], fill=(80, 80, 80), font=subtitle_font)
+
+    y = 120
+    draw.text((40, y), "Highlights", fill=(30, 60, 120), font=title_font)
+    y += 30
+    for label, (person, value) in summary["categories"]:
+        draw.text(
+            (60, y),
+            f"{label}: {person} ({value if value else 0})",
+            fill=(0, 0, 0),
+            font=subtitle_font,
+        )
+        y += 24
+
+    y += 20
+    draw.text((40, y), "Totals", fill=(30, 60, 120), font=title_font)
+    y += 30
+    for label, value in summary["totals"]:
+        draw.text((60, y), f"{label}: {value}", fill=(0, 0, 0), font=subtitle_font)
+        y += 24
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def render_summary(container: ui.column, summary: Dict[str, object], download_btn: ui.button, summary_state: dict) -> None:
     container.clear()
+    summary_state["data"] = summary
+    download_btn.visible = True
     with container:
         with ui.card().classes("w-full"):
             ui.label(f"Totals · {summary['filename']}").classes("text-xl font-semibold")
@@ -81,10 +141,16 @@ def render_summary(container: ui.column, summary: Dict[str, object]) -> None:
             ui.label("Messages by Year").classes("text-lg font-semibold mb-2")
             ui.table(columns=year_columns, rows=summary["year_rows"], row_key="year").props("flat")
 
+        with ui.card().classes("w-full"):
+            ui.label("Highlights").classes("text-lg font-semibold mb-2")
+            for label, (person, value) in summary["categories"]:
+                ui.label(f"{label}: {person} ({value})").classes("text-md")
+
         people_columns = [
             {"name": "name", "label": "Person", "field": "name", "sortable": True},
             {"name": "messages", "label": "Messages", "field": "messages", "sortable": True},
             {"name": "characters", "label": "Characters", "field": "characters", "sortable": True},
+            {"name": "longest", "label": "Longest text", "field": "longest", "sortable": True},
             {"name": "voice", "label": "Voice notes", "field": "voice", "sortable": True},
             {"name": "videos", "label": "Videos", "field": "videos", "sortable": True},
         ]
@@ -118,6 +184,21 @@ def main_page():
     ).classes("text-gray-600 mb-4")
 
     summary_container = ui.column().classes("gap-4 w-full")
+    summary_state = {"data": None}
+
+    async def download_card() -> None:
+        if not summary_state["data"]:
+            ui.notify("Generate a summary first", type="warning")
+            return
+        try:
+            data = generate_shareable_card(summary_state["data"])
+        except RuntimeError as exc:
+            ui.notify(str(exc), type="warning", close_button="OK")
+            return
+        ui.download(data, filename="chat-summary.png")
+
+    download_btn = ui.button("Download summary card", on_click=download_card).props("outline")
+    download_btn.visible = False
 
     async def handle_upload(event: events.UploadEventArguments) -> None:
         try:
@@ -128,7 +209,7 @@ def main_page():
             messages, _ = read_messages(tmp_path)
             stats = summarize(messages, top_n=20)
             summary = build_summary_context(stats, event.file.name or "chat.txt")
-            render_summary(summary_container, summary)
+            render_summary(summary_container, summary, download_btn, summary_state)
             ui.notify("Summary generated", type="positive")
         except Exception as exc:  # pragma: no cover - UI feedback
             ui.notify(f"Unable to process file: {exc}", type="negative")

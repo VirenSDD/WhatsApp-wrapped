@@ -421,6 +421,8 @@ def summarize(messages: List[Dict[str, object]], top_n: int) -> Dict[str, object
     stickers_by_person = Counter()
     word_counter = Counter()
     char_by_person = Counter()
+    longest_text_by_person = Counter()
+    longest_text_content: Dict[str, str] = {}
     total_characters = 0
 
     total_voice = 0
@@ -442,6 +444,9 @@ def summarize(messages: List[Dict[str, object]], top_n: int) -> Dict[str, object
         message_chars = len(text)
         char_by_person[sender] += message_chars
         total_characters += message_chars
+        if message_chars > longest_text_by_person[sender]:
+            longest_text_by_person[sender] = message_chars
+            longest_text_content[sender] = text
 
         totals_by_person[sender] += 1
         totals_by_year[timestamp.year] += 1
@@ -490,6 +495,8 @@ def summarize(messages: List[Dict[str, object]], top_n: int) -> Dict[str, object
         "sticker_total": total_stickers,
         "sticker_by_person": stickers_by_person,
         "char_by_person": char_by_person,
+        "longest_text_by_person": longest_text_by_person,
+        "longest_text_content": longest_text_content,
         "total_characters": total_characters,
         "top_words": word_counter.most_common(top_n),
         "export_format": export_format or "",
@@ -554,6 +561,18 @@ def main() -> None:
 
     print(f"\nCharacters sent: {stats['total_characters']}")
     print_counter("Characters by person:", stats["char_by_person"])
+
+    print("\nLongest single message (characters) by person:")
+    print_counter("Longest text by person:", stats["longest_text_by_person"])
+    print("\nLongest text content by person:")
+    longest_content = stats["longest_text_content"]
+    if not longest_content:
+        print("  (none)")
+    else:
+        for person in sorted(longest_content):
+            snippet = longest_content[person].replace("\n", "\\n")
+            length = stats["longest_text_by_person"].get(person, len(longest_content[person]))
+            print(f"  {person} [{length} chars]: {snippet}")
 
     print("\nMost frequent words:")
     for word, count in stats["top_words"]:
