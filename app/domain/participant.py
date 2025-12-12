@@ -17,29 +17,36 @@ class MessageKind(Enum):
 @dataclass
 class Participant:
     name: str
-    message_count: int = 0
-    characters: int = 0
-    longest_text: str = ""
-    voice_notes: int = 0
-    videos: int = 0
-    video_notes: int = 0
-    photos: int = 0
-    stickers: int = 0
+    message_count: int
+    characters: int
+    longest_text: str
+    voice_notes: int
+    videos: int
+    video_notes: int
+    photos: int
+    stickers: int
 
-    def record_text(self, text: str) -> None:
-        length = len(text)
-        self.characters += length
-        if length > len(self.longest_text):
-            self.longest_text = text
-
-    def record_kind(self, kind: MessageKind) -> None:
-        if kind == MessageKind.VOICE:
-            self.voice_notes += 1
-        elif kind == MessageKind.VIDEO:
-            self.videos += 1
-        elif kind == MessageKind.VIDEO_NOTE:
-            self.video_notes += 1
-        elif kind == MessageKind.PHOTO:
-            self.photos += 1
-        elif kind == MessageKind.STICKER:
-            self.stickers += 1
+    @staticmethod
+    def create(
+        name: str,
+        *,
+        message_count: int = 0,
+        characters: int = 0,
+        longest_text: str = "",
+        voice_notes: int = 0,
+        videos: int = 0,
+        video_notes: int = 0,
+        photos: int = 0,
+        stickers: int = 0,
+    ) -> "Participant":
+        return Participant(
+            name=name,
+            message_count=message_count,
+            characters=characters,
+            longest_text=longest_text,
+            voice_notes=voice_notes,
+            videos=videos,
+            video_notes=video_notes,
+            photos=photos,
+            stickers=stickers,
+        )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from textwrap import wrap
-from typing import Iterable, Literal, Tuple, TypedDict, cast
+from typing import Iterable, Tuple, TypedDict, cast
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -86,15 +86,8 @@ def _scale_dimensions(target: Tuple[int, int], upscale: float) -> Tuple[int, int
     return int(target[0] * upscale), int(target[1] * upscale)
 
 
-def generate_wrapped_image(data: WrappedPayload, size: Literal["vertical", "square"]) -> BytesIO:
-    sizes = {
-        "vertical": (1080, 1920),
-        "square": (1080, 1080),
-    }
-    if size not in sizes:
-        raise ValueError("size must be 'vertical' or 'square'")
-
-    final_width, final_height = sizes[size]
+def generate_wrapped_image(data: WrappedPayload) -> BytesIO:
+    final_width, final_height = (1080, 1920)
     upscale = 2.0
     canvas_width, canvas_height = _scale_dimensions((final_width, final_height), upscale)
 
@@ -167,8 +160,7 @@ def generate_wrapped_image(data: WrappedPayload, size: Literal["vertical", "squa
         draw.text((text_x, text_y), stat["label"], font=card_title_font, fill="white")
 
         value = stat["value"]
-        max_chars = 28 if size == "vertical" else 22
-        lines = wrap(value, width=max_chars) or [value]
+        lines = wrap(value, width=28) or [value]
         for idx, line in enumerate(lines[:2]):
             line_y = text_y + int(120 * upscale) + idx * int(70 * upscale)
             draw.text((text_x, line_y), line, font=card_value_font, fill=(230, 230, 230))

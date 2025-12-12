@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from re import Match
 
 from app.domain.conversation import Conversation
-from app.domain.participant import MessageKind
+from app.domain.domain_error import DomainError
+from app.domain.participant import MessageKind, Participant
 
 IOS_TIMESTAMP_RE = re.compile(
     r"^\s*\[(\d{1,2}/\d{1,2}/\d{2,4}),\s+(\d{1,2}:\d{2}(?::\d{2})?)\]\s+(.*)"
@@ -51,9 +54,23 @@ def parse_timestamp(date_str: str, time_str: str) -> datetime:
     raise ValueError(f"Unrecognized date format: {joined}")
 
 
+@dataclass
+class ParticipantTotals:
+    message_count: int = 0
+    characters: int = 0
+    longest_text: str = ""
+    voice_notes: int = 0
+    videos: int = 0
+    video_notes: int = 0
+    photos: int = 0
+    stickers: int = 0
+
+
 class ChatParser:
     def parse(self, path: Path, chat_name: Optional[str] = None) -> Conversation:
-        conversation = Conversation(chat_name=chat_name or path.stem)
+        participant_totals: Dict[str, ParticipantTotals] = {}
+        text_messages: list[str] = []
+        year_counts: Counter[int] = Counter()
         current: Optional[dict] = None
         export_format: Optional[str] = None
         last_timestamp: Optional[datetime] = None
@@ -72,10 +89,15 @@ class ChatParser:
                     rest = match.group(3)
                     if start_new:
                         if current:
-                            self._finalize_message(current, conversation)
+                            self._finalize_message(
+                                current,
+                                participant_totals,
+                                year_counts,
+                                text_messages,
+                                export_format,
+                            )
                         if matched_format and not export_format:
                             export_format = matched_format
-                            conversation.export_format = matched_format
                         if ":" not in rest:
                             current = None
                             last_timestamp = timestamp
@@ -101,9 +123,35 @@ class ChatParser:
                         current["text"] = f"{current['text']}\n{addition}"
 
         if current:
-            self._finalize_message(current, conversation)
+            self._finalize_message(
+                current, participant_totals, year_counts, text_messages, export_format
+            )
 
-        return conversation
+        if not export_format:
+            raise DomainError("Unable to determine export format from chat transcript")
+
+        participants = {
+            name: Participant.create(
+                name,
+                message_count=totals.message_count,
+                characters=totals.characters,
+                longest_text=totals.longest_text,
+                voice_notes=totals.voice_notes,
+                videos=totals.videos,
+                video_notes=totals.video_notes,
+                photos=totals.photos,
+                stickers=totals.stickers,
+            )
+            for name, totals in participant_totals.items()
+        }
+
+        return Conversation.create(
+            chat_name=chat_name or path.stem,
+            participants=participants,
+            year_counts=year_counts,
+            text_messages=text_messages,
+            export_format=export_format,
+        )
 
     def _match_timestamp(
         self, line: str, export_format: Optional[str]
@@ -136,13 +184,28 @@ class ChatParser:
             return False
         return True
 
-    def _finalize_message(self, message_data: dict, conversation: Conversation) -> None:
+    def _finalize_message(
+        self,
+        message_data: dict,
+        participant_totals: Dict[str, ParticipantTotals],
+        year_counts: Counter[int],
+        text_messages: list[str],
+        export_format: Optional[str],
+    ) -> None:
         sender = message_data["sender"]
         text = message_data["text"]
         timestamp = message_data["timestamp"]
-        format_hint = message_data.get("format") or conversation.export_format
+        format_hint = message_data.get("format") or export_format
         kind = self._classify_message(text, format_hint)
-        conversation.record_event(sender, timestamp, text if kind == MessageKind.TEXT else "", kind)
+        stats = participant_totals.setdefault(sender, ParticipantTotals())
+        stats.message_count += 1
+        year_counts[timestamp.year] += 1
+
+        if kind == MessageKind.TEXT:
+            self._record_text(stats, text)
+            text_messages.append(text)
+        else:
+            self._record_kind(stats, kind)
 
     def _classify_message(self, text: str, export_format: Optional[str]) -> MessageKind:
         lowered = text.lower()
@@ -196,3 +259,23 @@ class ChatParser:
     def _is_system_text(text: str) -> bool:
         normalized = text.strip("\u200e\u200f ").lower()
         return any(marker in normalized for marker in SYSTEM_TEXT_MARKERS)
+
+    @staticmethod
+    def _record_text(stats: ParticipantTotals, text: str) -> None:
+        length = len(text)
+        stats.characters += length
+        if length > len(stats.longest_text):
+            stats.longest_text = text
+
+    @staticmethod
+    def _record_kind(stats: ParticipantTotals, kind: MessageKind) -> None:
+        if kind == MessageKind.VOICE:
+            stats.voice_notes += 1
+        elif kind == MessageKind.VIDEO:
+            stats.videos += 1
+        elif kind == MessageKind.VIDEO_NOTE:
+            stats.video_notes += 1
+        elif kind == MessageKind.PHOTO:
+            stats.photos += 1
+        elif kind == MessageKind.STICKER:
+            stats.stickers += 1

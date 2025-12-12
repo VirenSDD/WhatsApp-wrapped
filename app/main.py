@@ -1,11 +1,13 @@
-"""FastAPI + NiceGUI interface for chat summaries."""
-
 from __future__ import annotations
 
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, TypedDict
+
+if __package__ in (None, ""):
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from fastapi import FastAPI
 from nicegui import events, ui
@@ -254,25 +256,16 @@ def main_page() -> None:
     summary_container = ui.column().classes("gap-4 w-full")
     summary_state: dict[str, Optional[WrappedPayload]] = {"share": None}
 
-    format_select = ui.select(
-        {
-            "vertical": "Vertical (1080x1920)",
-            "square": "Square (1080x1080)",
-        },
-        value="vertical",
-        label="Image format",
-    )
-
     async def download_card() -> None:
         if not summary_state["share"]:
             ui.notify("Generate a summary first", type="warning")
             return
         try:
-            buffer = generate_wrapped_image(summary_state["share"], format_select.value)
+            buffer = generate_wrapped_image(summary_state["share"])
         except Exception as exc:
             ui.notify(str(exc), type="warning", close_button="OK")
             return
-        ui.download(buffer.getvalue(), filename=f"chat-summary-{format_select.value}.png")
+        ui.download(buffer.getvalue(), filename="chat-summary-vertical.png")
 
     download_btn = ui.button("Download summary card", on_click=download_card).props("outline")
     download_btn.visible = False
@@ -283,6 +276,7 @@ def main_page() -> None:
             tmp_path = Path(tmp_file.name)
             tmp_file.close()
             await event.file.save(tmp_path)
+
             conversation = ChatParser().parse(tmp_path, chat_name=event.file.name or "chat")
             stats = ConversationSummarizer().summarize(conversation, top_n=20)
             summary = build_summary_context(stats, event.file.name or "chat.txt")

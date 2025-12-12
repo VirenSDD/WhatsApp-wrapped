@@ -241,6 +241,7 @@ class ConversationSummarizer:
     def summarize(self, conversation: Conversation, top_n: int = 20) -> SummaryStats:
         totals_by_year = conversation.year_counts
         participants = conversation.participants
+        format_value = conversation.export_format.value
 
         def collect(attr: str) -> Dict[str, int]:
             return {name: getattr(stats, attr) for name, stats in participants.items()}
@@ -261,8 +262,10 @@ class ConversationSummarizer:
         for text in conversation.text_messages:
             word_counter.update(tokenize(text))
 
+        total_messages = sum(messages_by_person.values())
+
         return {
-            "total_messages": conversation.total_messages,
+            "total_messages": total_messages,
             "messages_by_year": dict(totals_by_year),
             "messages_by_person": messages_by_person,
             "voice_total": sum(voice_by_person.values()),
@@ -280,5 +283,5 @@ class ConversationSummarizer:
             "longest_text_content": longest_text_content,
             "total_characters": sum(char_by_person.values()),
             "top_words": word_counter.most_common(top_n),
-            "export_format": conversation.export_format,
+            "export_format": format_value,
         }

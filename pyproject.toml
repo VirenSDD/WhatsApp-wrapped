@@ -10,7 +10,7 @@ dependencies = [
     "pydantic==2.12.5",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "ruff==0.5.4",
     "mypy==1.10.0",

@@ -925,7 +925,7 @@ dependencies = [
     { name = "pydantic" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "deptry" },
     { name = "mypy" },
@@ -935,16 +935,19 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deptry", marker = "extra == 'dev'", specifier = "==0.12.0" },
     { name = "fastapi", specifier = "==0.124.2" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = "==1.10.0" },
     { name = "nicegui", specifier = "==3.4.0" },
     { name = "pillow", specifier = "==12.0.0" },
-    { name = "poethepoet", marker = "extra == 'dev'", specifier = "==0.24.4" },
     { name = "pydantic", specifier = "==2.12.5" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.5.4" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "deptry", specifier = "==0.12.0" },
+    { name = "mypy", specifier = "==1.10.0" },
+    { name = "poethepoet", specifier = "==0.24.4" },
+    { name = "ruff", specifier = "==0.5.4" },
+]
 
 [[package]]
 name = "pyyaml"
