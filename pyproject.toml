@@ -16,6 +16,8 @@ dev = [
     "mypy==1.10.0",
     "deptry==0.12.0",
     "poethepoet==0.24.4",
+    "pytest==8.3.3",
+    "pytest-sugar==1.0.0",
 ]
 
 [tool.ruff]
@@ -43,6 +45,7 @@ per_rule_ignores = { DEP002 = ["ruff", "mypy", "deptry", "poethepoet"] }
 sequence = [
     "format:check",
     { cmd = "uv run mypy ." },
+    { cmd = "uv run pytest" },
     "deps:check",
     "lint:fix",
 ]
